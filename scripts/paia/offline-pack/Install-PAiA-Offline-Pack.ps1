@@ -81,6 +81,8 @@ New-Item -ItemType Directory -Force -Path $DataFolder | Out-Null
 $src = Join-Path $Pack 'data'
 & robocopy $src $DataFolder /E /NFL /NDL /NJH /NJS /NP /R:2 /W:2 | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "Copy failed (robocopy exit code $LASTEXITCODE)." }
+# robocopy uses 1-7 for success ("files copied"); don't let that leak out as a failure.
+$global:LASTEXITCODE = 0
 
 # --- 5. Check ---------------------------------------------------------------
 $modelYml = Get-ChildItem -Path (Join-Path $DataFolder 'llamacpp\models') -Filter model.yml -Recurse -ErrorAction SilentlyContinue

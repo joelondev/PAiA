@@ -100,7 +100,12 @@ jobs:
           if grep -q 'a\\jan\\jan' src-tauri/tauri.bundle.windows.nsis.template; then
             echo "NSIS template still contains Jan's CI path" >&2; exit 1
           fi
-          grep -n 'INSTALLERICON' src-tauri/tauri.bundle.windows.nsis.template
+          # Current Tauri CLIs keep nsis_tauri_utils.dll in %LOCALAPPDATA%\tauri\NSIS,
+          # not under target/; search there too.
+          PLUG="$LOCALAPPDATA\\tauri\\NSIS\\Plugins\\x86-unicode\\additional" \
+            perl -pi -e 's/^(!addplugindir "\$\{ADDITIONALPLUGINSPATH\}".*)$/$1\n!addplugindir "$ENV{PLUG}"/' \
+            src-tauri/tauri.bundle.windows.nsis.template
+          grep -n 'INSTALLERICON\|addplugindir' src-tauri/tauri.bundle.windows.nsis.template
 
       - name: Configure Yarn
         run: |
@@ -115,6 +120,13 @@ jobs:
       - name: Build app
         shell: bash
         run: make build
+
+      - name: Locate NSIS plugins (diagnostics on failure)
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path $env:LOCALAPPDATA, src-tauri\target -Recurse -Filter nsis_tauri_utils.dll -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.FullName }
 
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v4
