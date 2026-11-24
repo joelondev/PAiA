@@ -17,6 +17,54 @@ on:
         required: true
 
 jobs:
+  test-offline-pack-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build a small fake pack
+        shell: pwsh
+        run: |
+          $pack = Join-Path $env:RUNNER_TEMP 'pack'
+          $m = Join-Path $pack 'data\llamacpp\models\test-model'
+          $b = Join-Path $pack 'data\llamacpp\backends\b1\win-common_cpus-x64\build\bin'
+          New-Item -ItemType Directory -Force $m, $b | Out-Null
+          'model_path: llamacpp/models/test-model/model.gguf' | Set-Content (Join-Path $m 'model.yml')
+          [IO.File]::WriteAllBytes((Join-Path $m 'model.gguf'), [byte[]](1..255))
+          'exe' | Set-Content (Join-Path $b 'llama-server.exe')
+          Copy-Item scripts/paia/offline-pack/* $pack
+          $lines = @('# test manifest')
+          Get-ChildItem (Join-Path $pack 'data') -Recurse -File | ForEach-Object {
+            $rel = $_.FullName.Substring($pack.Length + 1) -replace '\\', '/'
+            $lines += "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $rel"
+          }
+          $lines | Set-Content (Join-Path $pack 'manifest.sha256')
+
+      - name: Installer copies a valid pack
+        shell: pwsh
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP 'data'
+          & (Join-Path $env:RUNNER_TEMP 'pack\Install-PAiA-Offline-Pack.ps1') -DataFolder $dest
+          foreach ($f in 'llamacpp\models\test-model\model.gguf',
+                         'llamacpp\models\test-model\model.yml',
+                         'llamacpp\backends\b1\win-common_cpus-x64\build\bin\llama-server.exe') {
+            if (-not (Test-Path (Join-Path $dest $f))) { throw "missing after install: $f" }
+          }
+          Write-Host 'valid pack installed OK'
+
+      - name: Installer rejects a corrupted pack
+        shell: pwsh
+        run: |
+          $pack = Join-Path $env:RUNNER_TEMP 'pack'
+          Add-Content (Join-Path $pack 'data\llamacpp\models\test-model\model.gguf') 'tampered'
+          $failed = $false
+          try {
+            & (Join-Path $pack 'Install-PAiA-Offline-Pack.ps1') -DataFolder (Join-Path $env:RUNNER_TEMP 'data2')
+          } catch { $failed = $true; Write-Host "rejected as expected: $_" }
+          if (-not $failed) { throw 'corrupted pack was NOT rejected' }
+          if (Test-Path (Join-Path $env:RUNNER_TEMP 'data2\llamacpp')) { throw 'files were copied despite failed verification' }
+
   build-windows-x64:
     runs-on: windows-latest
     env:
@@ -47,6 +95,12 @@ jobs:
           jq --arg v "$VERSION" '.version = $v' web-app/package.json > /tmp/p.json && mv /tmp/p.json web-app/package.json
           sed -i "s/jan_version/$VERSION/g; s/jan_build/$VERSION.0/g; s/jan_productname/Jan/g; s/jan_mainbinaryname/jan/g" \
             src-tauri/tauri.bundle.windows.nsis.template
+          # Jan's template hard-codes their CI checkout path (D:\a\jan\jan); use ours.
+          WS="$GITHUB_WORKSPACE" perl -pi -e 's/D:\\a\\jan\\jan/$ENV{WS}/g' src-tauri/tauri.bundle.windows.nsis.template
+          if grep -q 'a\\jan\\jan' src-tauri/tauri.bundle.windows.nsis.template; then
+            echo "NSIS template still contains Jan's CI path" >&2; exit 1
+          fi
+          grep -n 'INSTALLERICON' src-tauri/tauri.bundle.windows.nsis.template
 
       - name: Configure Yarn
         run: |
