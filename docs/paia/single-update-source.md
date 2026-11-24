@@ -15,7 +15,7 @@ GitHub, Hugging Face, npm or PyPI at runtime.
 Also set before any release:
 
 - `src-tauri/tauri.conf.json` → `plugins.updater.endpoints`: must be on `PAIA_UPDATE_BASE_URL`. The app ignores any endpoint on another origin.
-- `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`: replace `REPLACE_WITH_PAIA_UPDATER_PUBKEY` with our updater public key (`tauri signer generate`; keep the private key in the HSM / CI secret store). Until it is set, update installation fails closed.
+- `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`: holds the PAiA updater public key (minisign key ID `F4564594B175B837`). The matching private key is password-protected and kept outside the repo; for CI, provide it as `TAURI_SIGNING_PRIVATE_KEY` and its password as `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets. Never commit the private key.
 
 ## URL layout the Update Service must serve
 
