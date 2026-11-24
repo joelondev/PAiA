@@ -18,7 +18,7 @@ pub async fn check_for_app_updates(
     let endpoints = get_updater_endpoints(&app);
 
     if endpoints.is_empty() {
-        return Err("No updater endpoints configured in tauri.conf.json".to_string());
+        return Err("No PAiA updater endpoints configured in tauri.conf.json".to_string());
     }
 
     let updater = CustomUpdater::new().map_err(|e| e.to_string())?;
@@ -62,6 +62,14 @@ fn get_updater_endpoints(app: &AppHandle) -> Vec<String> {
                 return arr
                     .iter()
                     .filter_map(|v| v.as_str().map(String::from))
+                    .filter(|url| {
+                        // PAiA: only our Update Service may serve app updates.
+                        let allowed = jan_utils::paia::is_paia_url(url);
+                        if !allowed {
+                            log::warn!("Ignoring non-PAiA updater endpoint: {}", url);
+                        }
+                        allowed
+                    })
                     .collect();
             }
         }

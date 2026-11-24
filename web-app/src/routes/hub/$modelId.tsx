@@ -27,6 +27,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
+import { toPaiaUrl } from '@/lib/paia'
 
 type SearchParams = {
   repo: string
@@ -163,20 +164,9 @@ function HubModelDetailContent() {
   useEffect(() => {
     if (modelData?.readme) {
       setIsLoadingReadme(true)
-      // Try fetching without headers first
-      // There is a weird issue where this HF link will return error when access public repo with auth header
-      fetch(modelData.readme)
-        .then((response) => {
-          if (!response.ok && huggingfaceToken && modelData?.readme) {
-            // Retry with Authorization header if first fetch failed
-            return fetch(modelData.readme, {
-              headers: {
-                Authorization: `Bearer ${huggingfaceToken}`,
-              },
-            })
-          }
-          return response
-        })
+      // PAiA: README is fetched from our mirror only; no token is sent.
+      Promise.resolve()
+        .then(() => fetch(toPaiaUrl(modelData.readme as string)))
         .then((response) => response.text())
         .then((content) => {
           setReadmeContent(content)

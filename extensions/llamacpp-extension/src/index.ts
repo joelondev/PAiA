@@ -965,10 +965,13 @@ export default class llamacpp_extension extends AIEngine {
         this.config.check_for_updates !== false
           ? await fetchRemoteBackends()
           : []
+      // PAiA: units are often offline and ship their engines on disk. With no
+      // remote data, pick the best of the locally installed engines so a fresh
+      // offline install can chat without a manual backend selection.
       bestAvailableBackendString =
         remoteOnly.length > 0
           ? await this.determineBestBackend(remoteOnly)
-          : ''
+          : await this.determineBestBackend(version_backends)
 
       if (storedBackendType) {
         // Delegate migration check to Rust

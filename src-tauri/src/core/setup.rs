@@ -18,7 +18,6 @@ use tauri_plugin_store::Store;
 
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::mcp::constants::DEFAULT_MCP_CONFIG;
-use crate::core::mcp::helpers::add_server_config;
 
 use super::{
     extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
@@ -156,90 +155,20 @@ pub fn install_extensions<R: Runtime>(app: tauri::AppHandle<R>, force: bool) -> 
 
 // Migrate MCP servers configuration
 pub fn migrate_mcp_servers(
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     store: Arc<Store<Wry>>,
 ) -> Result<(), String> {
     let mcp_version = store
         .get("mcp_version")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-    if mcp_version < 1 {
-        log::info!("Migrating MCP schema version 1");
-        let result = add_server_config(
-            app_handle.clone(),
-            "exa".to_string(),
-            serde_json::json!({
-                  "command": "npx",
-                  "args": ["-y", "exa-mcp-server"],
-                  "env": { "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE" },
-                  "active": false
-            }),
-        );
-        if let Err(e) = result {
-            log::error!("Failed to add server config: {e}");
-        }
-    }
-    if mcp_version < 2 {
-        log::info!("Migrating MCP schema version 2: Adding Jan Browser MCP");
-        let result = add_server_config(
-            app_handle.clone(),
-            "Jan Browser MCP".to_string(),
-            serde_json::json!({
-                "command": "npx",
-                "args": ["-y", "search-mcp-server@latest"],
-                "env": {
-                    "BRIDGE_HOST": "127.0.0.1",
-                    "BRIDGE_PORT": "17389"
-                },
-                "active": false,
-                "official": true
-            }),
-        );
-        if let Err(e) = result {
-            log::error!("Failed to add Jan Browser MCP server config: {e}");
-        }
-    }
+    // PAiA: Jan's MCP migrations added npx-installed servers and the hosted Exa
+    // search service. PAiA ships no third-party tool servers, so they are skipped.
     if mcp_version < 3 {
-        log::info!("Migrating MCP schema version 3: Updating Exa to streamable HTTP");
-        if let Err(e) = migrate_exa_to_http(app_handle) {
-            log::error!("Failed to migrate Exa to HTTP: {e}");
-        }
+        log::info!("Skipping Jan MCP migrations (PAiA ships no third-party MCP servers)");
     }
     store.set("mcp_version", 3);
     store.save().expect("Failed to save store");
-    Ok(())
-}
-
-fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
-    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
-
-    let config_str =
-        fs::read_to_string(&config_path).map_err(|e| format!("Failed to read MCP config: {e}"))?;
-
-    let mut config: serde_json::Value = serde_json::from_str(&config_str)
-        .map_err(|e| format!("Failed to parse MCP config: {e}"))?;
-
-    if let Some(servers) = config.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
-        servers.insert(
-            "exa".to_string(),
-            serde_json::json!({
-                "type": "http",
-                "url": "https://mcp.exa.ai/mcp".to_string(),
-                "command": "",
-                "args": [],
-                "env": {},
-                "active": true
-            }),
-        );
-    }
-
-    fs::write(
-        &config_path,
-        serde_json::to_string_pretty(&config)
-            .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
-    )
-    .map_err(|e| format!("Failed to write MCP config: {e}"))?;
-
     Ok(())
 }
 

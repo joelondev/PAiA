@@ -4,61 +4,12 @@ pub const DEFAULT_MCP_BASE_RESTART_DELAY_MS: u64 = 1000; // Start with 1 second
 pub const DEFAULT_MCP_MAX_RESTART_DELAY_MS: u64 = 30000; // Cap at 30 seconds
 pub const DEFAULT_MCP_BACKOFF_MULTIPLIER: f64 = 2.0; // Double the delay each time
 
+/// PAiA: no MCP servers ship enabled by default. Jan's defaults installed
+/// packages from npm/PyPI at runtime (npx/uvx) and enabled a third-party search
+/// service (mcp.exa.ai). Approved tool servers will ship pre-bundled and signed
+/// inside PAiA releases instead.
 pub const DEFAULT_MCP_CONFIG: &str = r#"{
-  "mcpServers": {
-    "Jan Browser MCP": {
-      "command": "npx",
-      "args": ["-y", "search-mcp-server@latest"],
-      "env": {
-        "BRIDGE_HOST": "127.0.0.1",
-        "BRIDGE_PORT": "17389"
-      },
-      "active": false,
-      "official": true
-    },
-    "exa": {
-      "type": "http",
-      "url": "https://mcp.exa.ai/mcp",
-      "command": "",
-      "args": [],
-      "env": {},
-      "active": true
-    },
-    "browsermcp": {
-      "command": "npx",
-      "args": ["@browsermcp/mcp"],
-      "env": {},
-      "active": false
-    },
-    "fetch": {
-      "command": "uvx",
-      "args": ["mcp-server-fetch"],
-      "env": {},
-      "active": false
-    },
-    "serper": {
-      "command": "npx",
-      "args": ["-y", "serper-search-scrape-mcp-server"],
-      "env": { "SERPER_API_KEY": "YOUR_SERPER_API_KEY_HERE" },
-      "active": false
-    },
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/path/to/other/allowed/dir"
-      ],
-      "env": {},
-      "active": false
-    },
-    "sequential-thinking": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-      "env": {},
-      "active": false
-    }
-  },
+  "mcpServers": {},
   "mcpSettings": {
     "toolCallTimeoutSeconds": 30,
     "baseRestartDelayMs": 1000,

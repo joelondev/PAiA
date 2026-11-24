@@ -1,0 +1,16 @@
+name: PAiA update-source guard
+
+# Fails any change that reintroduces a third-party update, download or
+# analytics host. See docs/paia/single-update-source.md.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check update sources
+        run: bash scripts/check-update-sources.sh

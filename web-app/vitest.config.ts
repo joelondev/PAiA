@@ -39,8 +39,11 @@ export default defineConfig({
     IS_ANDROID: JSON.stringify(false),
     PLATFORM: JSON.stringify('web'),
     VERSION: JSON.stringify('test'),
-    POSTHOG_KEY: JSON.stringify(''),
-    POSTHOG_HOST: JSON.stringify(''),
     AUTO_UPDATER_DISABLED: JSON.stringify('false'),
+    PAIA_UPDATE_BASE_URL: JSON.stringify('https://updates.paia.example'),
+    IS_PAIA_APPLIANCE: JSON.stringify(true),
+    MODEL_CATALOG_URL: JSON.stringify('https://updates.paia.example/catalog/models.json'),
+    LATEST_JAN_MODEL_URL: JSON.stringify('https://updates.paia.example/catalog/latest-model.json'),
+    RELEASE_NOTES_URL: JSON.stringify('https://updates.paia.example/releases/notes.json'),
   },
 })

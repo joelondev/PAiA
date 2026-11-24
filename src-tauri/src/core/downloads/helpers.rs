@@ -16,34 +16,10 @@ use url::Url;
 
 // ===== CONSTANTS =====
 
-/// Jan mirror prefix for HuggingFace downloads
-/// - Stable builds: https://apps.jan.ai/
-/// - Nightly builds: https://apps-nightly.jan.ai/
-const JAN_MIRROR_PREFIX_STABLE: &str = "https://apps.jan.ai/";
-const JAN_MIRROR_PREFIX_NIGHTLY: &str = "https://apps-nightly.jan.ai/";
-
-/// Domains that should use mirror download with fallback
-const MIRROR_DOMAINS: &[&str] = &["huggingface.co"];
-
-/// Check if this is a nightly build based on package name
-fn is_nightly_build() -> bool {
-    let pkg_name = env!("CARGO_PKG_NAME");
-    pkg_name.to_lowercase().contains("nightly")
-}
-
-/// Get the appropriate mirror prefix based on build type
-fn get_mirror_prefix() -> &'static str {
-    if is_nightly_build() {
-        JAN_MIRROR_PREFIX_NIGHTLY
-    } else {
-        JAN_MIRROR_PREFIX_STABLE
-    }
-}
-
 /// Secret key for HMAC request authentication
-/// - In CI: Set JAN_SIGNING_KEY environment variable at build time
+/// - In CI: Set PAIA_SIGNING_KEY environment variable at build time
 /// - In local dev: Falls back to a test key
-const SECRET_KEY: &str = match option_env!("JAN_SIGNING_KEY") {
+const SECRET_KEY: &str = match option_env!("PAIA_SIGNING_KEY") {
     Some(key) => key,
     None => "local-dev-test-key-not-for-production",
 };
@@ -54,26 +30,10 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
 }
 
-/// Converts a URL to Jan mirror URL if applicable
-/// e.g., https://huggingface.co/... -> https://apps.jan.ai/huggingface.co/...
-/// or for nightly: https://huggingface.co/... -> https://apps-nightly.jan.ai/huggingface.co/...
-pub fn convert_to_mirror_url(url: &str) -> Option<String> {
-    let parsed = Url::parse(url).ok()?;
-    let host = parsed.host_str()?;
-
-    // Check if the domain should use mirror
-    if MIRROR_DOMAINS
-        .iter()
-        .any(|domain| host == *domain || host.ends_with(&format!(".{}", domain)))
-    {
-        // Remove the scheme (https://) and prepend mirror prefix
-        let url_without_scheme = url
-            .strip_prefix("https://")
-            .or_else(|| url.strip_prefix("http://"))?;
-        Some(format!("{}{}", get_mirror_prefix(), url_without_scheme))
-    } else {
-        None
-    }
+/// Resolve a download URL to the PAiA Update Service.
+/// Hugging Face URLs are rewritten to our mirror; any other non-PAiA host is refused.
+pub fn convert_to_mirror_url(url: &str) -> Result<String, String> {
+    jan_utils::paia::resolve_download_url(url)
 }
 
 /// Get session identifier for request signing
@@ -405,6 +365,18 @@ pub async fn _download_files_internal(
 
     let header_map = _convert_headers(headers).map_err(err_to_string)?;
 
+    // PAiA: every file must come from the PAiA Update Service. Rewrite mirrored
+    // upstream URLs and refuse anything else before any request is made.
+    let items: Vec<DownloadItem> = items
+        .iter()
+        .map(|item| {
+            let mut item = item.clone();
+            item.url = convert_to_mirror_url(&item.url)?;
+            Ok(item)
+        })
+        .collect::<Result<_, String>>()?;
+    let items = items.as_slice();
+
     // Calculate sizes for each file
     let mut file_sizes: HashMap<String, u64> = HashMap::new();
     for item in items.iter() {
@@ -602,7 +574,7 @@ async fn download_single_file(
 
     let (resp, actual_url) = if should_resume {
         let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
-        match _get_maybe_resume(&client, &item.url, downloaded_size).await {
+        match _get_maybe_resume_with_hmac(&client, &item.url, downloaded_size).await {
             Ok(resp) => {
                 log::info!(
                     "Resume download: {}, already downloaded {} bytes",
@@ -641,10 +613,7 @@ async fn download_single_file(
         _get_maybe_resume_with_fallback(&client, &item.url, 0).await?
     };
 
-    // Log which URL is being used for download
-    if actual_url != item.url {
-        log::info!("Downloading via Jan mirror: {}", actual_url);
-    }
+    log::info!("Downloading from PAiA Update Service: {}", actual_url);
 
     // If HEAD gave us no size, refine the running total from the GET response
     // so the UI can progress past "Initializing" and show a real percentage.
@@ -743,37 +712,19 @@ async fn download_single_file(
 
 // ===== HTTP CLIENT HELPER FUNCTIONS =====
 
-/// Attempts to download from mirror URL first, falls back to original URL if mirror fails
-/// When using mirror URL, adds HMAC headers for request authentication
+/// Download from the PAiA Update Service with HMAC request signing.
+/// There is no fallback to the upstream host: if PAiA cannot serve the file, the download fails.
 pub async fn _get_maybe_resume_with_fallback(
     client: &reqwest::Client,
     url: &str,
     start_bytes: u64,
 ) -> Result<(reqwest::Response, String), String> {
-    // Try mirror URL first if applicable
-    if let Some(mirror_url) = convert_to_mirror_url(url) {
-        log::info!("Attempting download from Jan mirror: {}", mirror_url);
-        match _get_maybe_resume_with_hmac(client, &mirror_url, start_bytes).await {
-            Ok(resp) => {
-                log::info!("Successfully connected to Jan mirror");
-                return Ok((resp, mirror_url));
-            }
-            Err(e) => {
-                log::warn!(
-                    "Jan mirror download failed: {}. Falling back to original URL...",
-                    e
-                );
-            }
-        }
-    }
-
-    // Fallback to original URL (no HMAC headers needed)
-    log::info!("Downloading from original URL: {}", url);
-    let resp = _get_maybe_resume_internal(client, url, start_bytes).await?;
-    Ok((resp, url.to_string()))
+    let paia_url = convert_to_mirror_url(url)?;
+    let resp = _get_maybe_resume_with_hmac(client, &paia_url, start_bytes).await?;
+    Ok((resp, paia_url))
 }
 
-/// Download from URL with HMAC headers for Jan mirror authentication
+/// Download from URL with HMAC headers for PAiA Update Service authentication
 async fn _get_maybe_resume_with_hmac(
     client: &reqwest::Client,
     url: &str,
@@ -818,69 +769,3 @@ async fn _get_maybe_resume_with_hmac(
     Ok(resp)
 }
 
-/// Internal function to attempt download from a single URL (without HMAC)
-async fn _get_maybe_resume_internal(
-    client: &reqwest::Client,
-    url: &str,
-    start_bytes: u64,
-) -> Result<reqwest::Response, String> {
-    if start_bytes > 0 {
-        let resp = client
-            .get(url)
-            .header("Range", format!("bytes={start_bytes}-"))
-            .send()
-            .await
-            .map_err(err_to_string)?;
-        if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-            return Err(format!(
-                "Failed to resume download: HTTP status {}, {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            ));
-        }
-        Ok(resp)
-    } else {
-        let resp = client.get(url).send().await.map_err(err_to_string)?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Failed to download: HTTP status {}, {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            ));
-        }
-        Ok(resp)
-    }
-}
-
-pub async fn _get_maybe_resume(
-    client: &reqwest::Client,
-    url: &str,
-    start_bytes: u64,
-) -> Result<reqwest::Response, String> {
-    if start_bytes > 0 {
-        let resp = client
-            .get(url)
-            .header("Range", format!("bytes={start_bytes}-"))
-            .send()
-            .await
-            .map_err(err_to_string)?;
-        if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-            return Err(format!(
-                "Failed to resume download: HTTP status {}, {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            ));
-        }
-        Ok(resp)
-    } else {
-        let resp = client.get(url).send().await.map_err(err_to_string)?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Failed to download: HTTP status {}, {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            ));
-        }
-        Ok(resp)
-    }
-}
