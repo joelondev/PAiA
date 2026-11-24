@@ -1,0 +1,76 @@
+name: PAiA Windows test build
+
+# Unsigned Windows x64 installer for hardware testing.
+# - No code-signing or updater secrets needed (updater artifacts disabled).
+# - WebView2 is embedded so the installer works with no network.
+# - Pair with the offline pack (scripts/paia/make-offline-pack.sh) for the
+#   default model and llama.cpp engines.
+on:
+  push:
+    branches: ['paia/**']
+    paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'App version (x.y.z)'
+        default: '0.8.2'
+        required: true
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ inputs.version || '0.8.2' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+
+      - name: Configure test build
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Version, no updater artifacts (no signing key in this workflow)
+          jq --arg v "$VERSION" '.version = $v | .bundle.createUpdaterArtifacts = false' \
+            src-tauri/tauri.conf.json > /tmp/c.json && mv /tmp/c.json src-tauri/tauri.conf.json
+          # NSIS template + embedded WebView2 so install works fully offline
+          jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"
+              | .bundle.windows.webviewInstallMode = {"type": "offlineInstaller", "silent": true}' \
+            src-tauri/tauri.windows.conf.json > /tmp/w.json && mv /tmp/w.json src-tauri/tauri.windows.conf.json
+          jq --arg v "$VERSION" '.version = $v' web-app/package.json > /tmp/p.json && mv /tmp/p.json web-app/package.json
+          sed -i "s/jan_version/$VERSION/g; s/jan_build/$VERSION.0/g; s/jan_productname/Jan/g; s/jan_mainbinaryname/jan/g" \
+            src-tauri/tauri.bundle.windows.nsis.template
+
+      - name: Configure Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Update-source guard
+        shell: bash
+        run: bash scripts/check-update-sources.sh
+
+      - name: Build app
+        shell: bash
+        run: make build
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: paia-windows-x64-installer-${{ env.VERSION }}
+          path: ./src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Upload MSI installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: paia-windows-x64-msi-${{ env.VERSION }}
+          path: ./src-tauri/target/release/bundle/msi/*.msi
