@@ -24,9 +24,9 @@ export const useReleaseNotes = create<ReleaseState>((set) => ({
   fetchLatestRelease: async (includeBeta: boolean) => {
     set({ loading: true, error: null })
     try {
-      const res = await fetch(
-        'https://api.github.com/repos/janhq/jan/releases'
-      )
+      // PAiA: release notes are served by the PAiA Update Service
+      // (same shape as the GitHub releases API: an array of releases).
+      const res = await fetch(RELEASE_NOTES_URL)
       if (!res.ok) throw new Error('Failed to fetch releases')
       const releases = await res.json()
 

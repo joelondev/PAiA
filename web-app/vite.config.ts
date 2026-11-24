@@ -8,36 +8,17 @@ import packageJson from './package.json'
 const host = process.env.TAURI_DEV_HOST
 
 // Plugin to inject GA scripts in HTML
-function injectGoogleAnalytics(gaMeasurementId?: string): Plugin {
+/** PAiA Update Service origin. Must match PAIA_UPDATE_BASE_URL used for the Rust build. */
+const PAIA_UPDATE_BASE_URL = (
+  process.env.PAIA_UPDATE_BASE_URL || 'https://updates.paia.example'
+).replace(/\/+$/, '')
+
+/** PAiA: no third-party analytics. Strips the analytics placeholder from index.html. */
+function stripAnalyticsPlaceholder(): Plugin {
   return {
-    name: 'inject-google-analytics',
+    name: 'paia-strip-analytics-placeholder',
     transformIndexHtml(html) {
-      // Only inject GA scripts if GA_MEASUREMENT_ID is set
-      if (!gaMeasurementId) {
-        // Remove placeholder if no GA ID
-        return html.replace(/\s*<!-- INJECT_GOOGLE_ANALYTICS -->\n?/g, '')
-      }
-
-      const gaScripts = `<!-- Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){ dataLayer.push(arguments); }
-      gtag('consent','default',{
-        ad_storage:'denied',
-        analytics_storage:'denied',
-        ad_user_data:'denied',
-        ad_personalization:'denied',
-        wait_for_update:500
-      });
-      gtag('js', new Date());
-      gtag('config', '${gaMeasurementId}', {
-        debug_mode: (location.hostname === 'localhost'),
-        send_page_view: false
-      });
-    </script>`
-
-      return html.replace('<!-- INJECT_GOOGLE_ANALYTICS -->', gaScripts)
+      return html.replace(/\s*<!-- INJECT_GOOGLE_ANALYTICS -->\n?/g, '')
     },
   }
 }
@@ -59,7 +40,7 @@ export default defineConfig(({ mode }) => {
       nodePolyfills({
         include: ['path'],
       }),
-      injectGoogleAnalytics(env.GA_MEASUREMENT_ID),
+      stripAnalyticsPlaceholder(),
     ],
     resolve: {
       alias: {
@@ -90,15 +71,14 @@ export default defineConfig(({ mode }) => {
 
       VERSION: JSON.stringify(packageJson.version),
 
-      POSTHOG_KEY: JSON.stringify(env.POSTHOG_KEY),
-      POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
-      GA_MEASUREMENT_ID: JSON.stringify(env.GA_MEASUREMENT_ID),
-      MODEL_CATALOG_URL: JSON.stringify(
-        'https://raw.githubusercontent.com/janhq/model-catalog/main/model_catalog_v2.json'
-      ),
+      // PAiA single update source: catalog and release notes come only from us.
+      PAIA_UPDATE_BASE_URL: JSON.stringify(PAIA_UPDATE_BASE_URL),
+      IS_PAIA_APPLIANCE: JSON.stringify(process.env.PAIA_APPLIANCE !== '0'),
+      MODEL_CATALOG_URL: JSON.stringify(`${PAIA_UPDATE_BASE_URL}/catalog/models.json`),
       LATEST_JAN_MODEL_URL: JSON.stringify(
-        'https://raw.githubusercontent.com/janhq/model-catalog/main/latest_jan_model.json'
+        `${PAIA_UPDATE_BASE_URL}/catalog/latest-model.json`
       ),
+      RELEASE_NOTES_URL: JSON.stringify(`${PAIA_UPDATE_BASE_URL}/releases/notes.json`),
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'
       ),

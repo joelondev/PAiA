@@ -498,6 +498,14 @@ function General() {
                           )
                           return
                         }
+                        // PAiA: units never contact Hugging Face; models come from the PAiA catalog.
+                        if (IS_PAIA_APPLIANCE) {
+                          toast.info('Hugging Face access is disabled on PAiA units', {
+                            description:
+                              'Models are delivered through the PAiA catalog. Ask your admin to request a model.',
+                          })
+                          return
+                        }
                         setIsValidatingToken(true)
                         const controller = new AbortController()
                         const timeoutId = setTimeout(
@@ -574,7 +582,7 @@ function General() {
                 description={t('settings:general.releaseNotesDesc')}
                 actions={
                   <a
-                    href="https://github.com/janhq/jan/releases"
+                    href={`${PAIA_UPDATE_BASE_URL}/releases`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

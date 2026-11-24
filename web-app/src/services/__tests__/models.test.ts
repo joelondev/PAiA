@@ -185,9 +185,9 @@ describe('DefaultModelsService', () => {
 
       const result = await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium')
       expect(result).toEqual(mockRepoData)
+      // PAiA: metadata is fetched from the PAiA mirror, with no HF token
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
-        { headers: {} }
+        'https://updates.paia.example/models/huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true'
       )
     })
 
@@ -198,9 +198,9 @@ describe('DefaultModelsService', () => {
     ])('should clean %s input format', async (_label, input) => {
       ;(fetch as any).mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({}) })
       await modelsService.fetchHuggingFaceRepo(input)
+      // PAiA: metadata is fetched from the PAiA mirror, with no HF token
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
-        { headers: {} }
+        'https://updates.paia.example/models/huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true'
       )
     })
 

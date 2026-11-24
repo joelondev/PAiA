@@ -370,16 +370,15 @@ pub async fn fetch_hf_gguf_files(
     repo_id: &str,
     hf_token: Option<&str>,
 ) -> Result<Vec<HfFileInfo>, String> {
-    let url = format!(
+    // PAiA: metadata is served by the PAiA mirror; the HF token is never sent.
+    let _ = hf_token;
+    let url = jan_utils::paia::resolve_download_url(&format!(
         "https://huggingface.co/api/models/{}?blobs=true&files_metadata=true",
         repo_id
-    );
+    ))?;
 
     let client = reqwest::Client::new();
-    let mut req = client.get(&url);
-    if let Some(tok) = hf_token {
-        req = req.bearer_auth(tok);
-    }
+    let req = client.get(&url);
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let status = resp.status();
@@ -470,11 +469,11 @@ pub async fn download_hf_model(
     let dest_path = model_dir.join(&file.filename);
 
     // ── Download ──────────────────────────────────────────────────────────
+    // PAiA: model files come only from the PAiA mirror; the HF token is never sent.
+    let _ = hf_token;
+    let download_url = jan_utils::paia::resolve_download_url(&file.download_url)?;
     let client = reqwest::Client::new();
-    let mut req = client.get(&file.download_url);
-    if let Some(tok) = hf_token {
-        req = req.bearer_auth(tok);
-    }
+    let req = client.get(&download_url);
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {

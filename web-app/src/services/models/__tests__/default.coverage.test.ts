@@ -116,22 +116,20 @@ describe('DefaultModelsService - coverage supplement', () => {
       })
       await svc.fetchHuggingFaceRepo('https://huggingface.co/org/repo/')
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('org/repo'),
-        expect.any(Object)
+        'https://updates.paia.example/models/huggingface.co/api/models/org/repo?blobs=true&files_metadata=true'
       )
     })
 
-    it('passes hfToken as Bearer header', async () => {
+    it('never sends the hfToken (PAiA mirror only)', async () => {
       ;(fetch as any).mockResolvedValue({
         ok: true,
         json: vi.fn().mockResolvedValue({}),
       })
       await svc.fetchHuggingFaceRepo('org/repo', 'hf_token123')
-      expect(fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          headers: { Authorization: 'Bearer hf_token123' },
-        })
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect((fetch as any).mock.calls[0]).toHaveLength(1)
+      expect((fetch as any).mock.calls[0][0]).toMatch(
+        /^https:\/\/updates\.paia\.example\//
       )
     })
 
@@ -170,8 +168,7 @@ describe('DefaultModelsService - coverage supplement', () => {
       })
       await svc.fetchHuggingFaceRepo('huggingface.co/org/repo')
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('org/repo'),
-        expect.any(Object)
+        'https://updates.paia.example/models/huggingface.co/api/models/org/repo?blobs=true&files_metadata=true'
       )
     })
   })

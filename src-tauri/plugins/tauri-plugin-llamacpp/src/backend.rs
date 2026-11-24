@@ -1097,32 +1097,17 @@ pub async fn fetch_remote_supported_backends(
 ) -> Result<Vec<BackendInfo>, String> {
     let client = build_http_client(proxy.as_ref())?;
 
-    let releases: Vec<GithubRelease> = {
-        let primary = client
-            .get("https://api.github.com/repos/janhq/llama.cpp/releases")
-            .send()
-            .await;
-
-        match primary {
-            Ok(resp) if resp.status().is_success() => resp
-                .json::<Vec<GithubRelease>>()
-                .await
-                .map_err(|e| format!("Failed to parse GitHub releases JSON: {}", e))?,
-            _ => {
-                // Fallback to catalog mirror
-                let fallback = client
-                    .get("https://catalog.jan.ai/llama.cpp/releases/releases.json")
-                    .send()
-                    .await
-                    .map_err(|e| format!("Both GitHub and fallback requests failed: {}", e))?;
-
-                fallback
-                    .json::<Vec<GithubRelease>>()
-                    .await
-                    .map_err(|e| format!("Failed to parse fallback releases JSON: {}", e))?
-            }
-        }
-    };
+    // PAiA: the engine release index is served only by the PAiA Update Service.
+    let releases: Vec<GithubRelease> = client
+        .get(jan_utils::paia::paia_url("engines/llama.cpp/releases.json"))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch engine releases from PAiA: {}", e))?
+        .error_for_status()
+        .map_err(|e| format!("PAiA engine release index unavailable: {}", e))?
+        .json::<Vec<GithubRelease>>()
+        .await
+        .map_err(|e| format!("Failed to parse PAiA engine releases JSON: {}", e))?;
 
     // Take the first 10 (already sorted descending by tag_name from GitHub)
     let mut result: Vec<BackendInfo> = Vec::new();
@@ -1207,16 +1192,12 @@ pub fn build_backend_download_items(
     };
 
     // Base URL for the main backend archive
-    let backend_url = match source.as_str() {
-        "github" => format!(
-            "https://github.com/janhq/llama.cpp/releases/download/{}/llama-{}-bin-{}.{}",
-            version, version, backend, archive_ext
-        ),
-        _ => format!(
-            "https://catalog.jan.ai/llama.cpp/releases/{}/llama-{}-bin-{}.{}",
-            version, version, backend, archive_ext
-        ),
-    };
+    // PAiA: engine archives come only from the PAiA Update Service.
+    let _ = &source; // legacy flag from the frontend; origin is always PAiA
+    let backend_url = jan_utils::paia::paia_url(&format!(
+        "engines/llama.cpp/{}/llama-{}-bin-{}.{}",
+        version, version, backend, archive_ext
+    ));
 
     let save_path = format!("{}/backend.{}", backend_dir, archive_ext);
 
@@ -1231,16 +1212,10 @@ pub fn build_backend_download_items(
         let already_installed =
             check_cuda_installed_internal(&backend_dir, "11.7", &os_type);
         if !already_installed {
-            let cuda_url = match source.as_str() {
-                "github" => format!(
-                    "https://github.com/janhq/llama.cpp/releases/download/{}/cudart-llama-bin-{}-cu11.7-x64.tar.gz",
-                    version, platform_name
-                ),
-                _ => format!(
-                    "https://catalog.jan.ai/llama.cpp/releases/{}/cudart-llama-bin-{}-cu11.7-x64.tar.gz",
-                    version, platform_name
-                ),
-            };
+            let cuda_url = jan_utils::paia::paia_url(&format!(
+                "engines/llama.cpp/{}/cudart-llama-bin-{}-cu11.7-x64.tar.gz",
+                version, platform_name
+            ));
             items.push(BackendDownloadItem {
                 url: cuda_url,
                 save_path: format!("{}/build/bin/cuda11.tar.gz", backend_dir),
@@ -1251,16 +1226,10 @@ pub fn build_backend_download_items(
         let already_installed =
             check_cuda_installed_internal(&backend_dir, "12.0", &os_type);
         if !already_installed {
-            let cuda_url = match source.as_str() {
-                "github" => format!(
-                    "https://github.com/janhq/llama.cpp/releases/download/{}/cudart-llama-bin-{}-cu12.0-x64.tar.gz",
-                    version, platform_name
-                ),
-                _ => format!(
-                    "https://catalog.jan.ai/llama.cpp/releases/{}/cudart-llama-bin-{}-cu12.0-x64.tar.gz",
-                    version, platform_name
-                ),
-            };
+            let cuda_url = jan_utils::paia::paia_url(&format!(
+                "engines/llama.cpp/{}/cudart-llama-bin-{}-cu12.0-x64.tar.gz",
+                version, platform_name
+            ));
             items.push(BackendDownloadItem {
                 url: cuda_url,
                 save_path: format!("{}/build/bin/cuda12.tar.gz", backend_dir),
@@ -1271,16 +1240,10 @@ pub fn build_backend_download_items(
         let already_installed =
             check_cuda_installed_internal(&backend_dir, "13.0", &os_type);
         if !already_installed {
-            let cuda_url = match source.as_str() {
-                "github" => format!(
-                    "https://github.com/janhq/llama.cpp/releases/download/{}/cudart-llama-bin-{}-cu13.0-x64.tar.gz",
-                    version, platform_name
-                ),
-                _ => format!(
-                    "https://catalog.jan.ai/llama.cpp/releases/{}/cudart-llama-bin-{}-cu13.0-x64.tar.gz",
-                    version, platform_name
-                ),
-            };
+            let cuda_url = jan_utils::paia::paia_url(&format!(
+                "engines/llama.cpp/{}/cudart-llama-bin-{}-cu13.0-x64.tar.gz",
+                version, platform_name
+            ));
             items.push(BackendDownloadItem {
                 url: cuda_url,
                 save_path: format!("{}/build/bin/cuda13.tar.gz", backend_dir),
@@ -2124,7 +2087,7 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert!(items[0].url.contains("linux-common_cpus-x64"));
-        assert!(items[0].url.contains("github.com"));
+        assert!(jan_utils::paia::is_paia_url(&items[0].url));
     }
 
     #[test]
@@ -2170,12 +2133,13 @@ mod tests {
     }
 
     #[test]
-    fn test_build_backend_download_items_github_vs_cdn_urls() {
+    fn test_build_backend_download_items_always_use_paia_origin() {
+        // PAiA: the legacy "github" / "cdn" source flag no longer changes the origin.
         let temp_dir = tempfile::tempdir().unwrap();
         let jan_data = temp_dir.path().to_string_lossy().to_string();
 
         let github_items = build_backend_download_items(
-            "linux-common_cpus-x64".to_string(),
+            "linux-cuda-12-common_cpus-x64".to_string(),
             "b7523".to_string(),
             "github".to_string(),
             jan_data.clone(),
@@ -2184,7 +2148,7 @@ mod tests {
         .unwrap();
 
         let cdn_items = build_backend_download_items(
-            "linux-common_cpus-x64".to_string(),
+            "linux-cuda-12-common_cpus-x64".to_string(),
             "b7523".to_string(),
             "cdn".to_string(),
             jan_data,
@@ -2192,8 +2156,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(github_items[0].url.contains("github.com"));
-        assert!(cdn_items[0].url.contains("catalog.jan.ai"));
-        assert_ne!(github_items[0].url, cdn_items[0].url);
+        for item in github_items.iter().chain(cdn_items.iter()) {
+            assert!(jan_utils::paia::is_paia_url(&item.url), "{}", item.url);
+            assert!(!item.url.contains("github.com") && !item.url.contains("jan.ai"));
+        }
+        assert_eq!(github_items[0].url, cdn_items[0].url);
     }
 }

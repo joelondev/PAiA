@@ -387,49 +387,53 @@ fn test_download_item_deserialization() {
     assert_eq!(item.save_path, "downloads/file.zip");
 }
 
-// ===== convert_to_mirror_url =====
+// ===== convert_to_mirror_url (PAiA single update source) =====
 
 #[test]
 fn test_convert_to_mirror_url_huggingface() {
     let url = "https://huggingface.co/some/repo/resolve/main/model.gguf";
-    let mirror = convert_to_mirror_url(url).expect("should produce a mirror url");
-    assert!(mirror.starts_with("https://apps") && mirror.contains(".jan.ai/"));
-    assert!(mirror.ends_with("huggingface.co/some/repo/resolve/main/model.gguf"));
+    let mirror = convert_to_mirror_url(url).expect("should produce a PAiA url");
+    assert!(jan_utils::paia::is_paia_url(&mirror));
+    assert!(mirror.ends_with("/models/huggingface.co/some/repo/resolve/main/model.gguf"));
 }
 
 #[test]
 fn test_convert_to_mirror_url_huggingface_subdomain() {
-    // Subdomains of mirror domains should also be mirrored
     let url = "https://cdn.huggingface.co/file.bin";
     let mirror = convert_to_mirror_url(url).expect("subdomain should mirror");
-    assert!(mirror.ends_with("cdn.huggingface.co/file.bin"));
+    assert!(mirror.ends_with("/models/cdn.huggingface.co/file.bin"));
 }
 
 #[test]
 fn test_convert_to_mirror_url_http_scheme() {
-    let url = "http://huggingface.co/file";
-    let mirror = convert_to_mirror_url(url).expect("http should be stripped too");
-    assert!(mirror.ends_with("huggingface.co/file"));
+    let mirror = convert_to_mirror_url("http://huggingface.co/file").expect("http should mirror");
+    assert!(jan_utils::paia::is_paia_url(&mirror));
     assert!(!mirror.contains("http://huggingface.co"));
 }
 
 #[test]
-fn test_convert_to_mirror_url_non_mirror_domain() {
-    assert!(convert_to_mirror_url("https://example.com/file.bin").is_none());
-    assert!(convert_to_mirror_url("https://github.com/x/y").is_none());
+fn test_convert_to_mirror_url_blocks_third_parties() {
+    assert!(convert_to_mirror_url("https://example.com/file.bin").is_err());
+    assert!(convert_to_mirror_url("https://github.com/x/y").is_err());
+    assert!(convert_to_mirror_url("https://apps.jan.ai/huggingface.co/x").is_err());
 }
 
 #[test]
 fn test_convert_to_mirror_url_invalid_url() {
-    assert!(convert_to_mirror_url("not a url").is_none());
-    assert!(convert_to_mirror_url("").is_none());
+    assert!(convert_to_mirror_url("not a url").is_err());
+    assert!(convert_to_mirror_url("").is_err());
 }
 
 #[test]
 fn test_convert_to_mirror_url_not_substring_match() {
-    // A domain that merely contains "huggingface.co" as substring (not as suffix) must NOT match
-    let url = "https://huggingface.co.evil.com/file";
-    assert!(convert_to_mirror_url(url).is_none());
+    // A domain that merely contains "huggingface.co" as substring must be blocked, not mirrored
+    assert!(convert_to_mirror_url("https://huggingface.co.evil.com/file").is_err());
+}
+
+#[test]
+fn test_paia_urls_pass_through() {
+    let url = jan_utils::paia::paia_url("engines/llama.cpp/b1/backend.tar.gz");
+    assert_eq!(convert_to_mirror_url(&url).unwrap(), url);
 }
 
 // ===== err_to_string =====

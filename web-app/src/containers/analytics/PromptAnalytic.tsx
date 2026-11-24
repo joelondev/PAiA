@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { IconFileTextShield } from '@tabler/icons-react'
-import posthog from 'posthog-js'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export function PromptAnalytic() {
@@ -10,11 +9,9 @@ export function PromptAnalytic() {
 
   const handleProductAnalytics = (isAllowed: boolean) => {
     if (isAllowed) {
-      posthog.opt_in_capturing()
       setProductAnalytic(true)
       setProductAnalyticPrompt(false)
     } else {
-      posthog.opt_out_capturing()
       setProductAnalytic(false)
       setProductAnalyticPrompt(false)
     }

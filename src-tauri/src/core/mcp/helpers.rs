@@ -559,6 +559,15 @@ async fn schedule_mcp_start_task<R: Runtime>(
             }
         }
 
+        // PAiA: never fetch and execute packages from public registries at runtime.
+        if is_registry_package_runner(&config_params.command) {
+            return Err(format!(
+                "MCP server uses '{}', which downloads packages from a public registry. \
+                 PAiA units only run tool servers shipped in signed PAiA releases.",
+                config_params.command
+            ));
+        }
+
         let mut cmd = Command::new(config_params.command.clone());
         let bun_x_path = if cfg!(windows) {
             bin_path.join("bun.exe")
@@ -1241,4 +1250,16 @@ pub fn add_server_config_with_path<R: Runtime>(
     .map_err(|e| format!("Failed to write config file: {e}"))?;
 
     Ok(())
+}
+
+/// PAiA: commands that download and run packages from npm/PyPI on demand.
+pub fn is_registry_package_runner(command: &str) -> bool {
+    // Split on both separators so Windows paths are caught on every host OS.
+    let file = command.trim().rsplit(|c: char| c == '/' || c == '\\').next().unwrap_or("");
+    let name = file
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(name.as_str(), "npx" | "uvx" | "bunx" | "pnpx" | "pipx")
 }

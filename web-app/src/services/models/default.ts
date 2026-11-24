@@ -27,6 +27,7 @@ import {
   extractToolContextFromContent,
   extractToolContextFromMetadata,
 } from './tokenCountToolContext'
+import { toPaiaUrl } from '@/lib/paia'
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
@@ -101,15 +102,13 @@ export class DefaultModelsService implements ModelsService {
         return null
       }
 
+      // PAiA: repo metadata comes from our mirror, which only serves vetted
+      // models. The user's Hugging Face token is never sent anywhere.
+      void hfToken
       const response = await fetch(
-        `https://huggingface.co/api/models/${cleanRepoId}?blobs=true&files_metadata=true`,
-        {
-          headers: hfToken
-            ? {
-                Authorization: `Bearer ${hfToken}`,
-              }
-            : {},
-        }
+        toPaiaUrl(
+          `https://huggingface.co/api/models/${cleanRepoId}?blobs=true&files_metadata=true`
+        )
       )
 
       if (!response.ok) {

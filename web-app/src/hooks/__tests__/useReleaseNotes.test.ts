@@ -65,7 +65,7 @@ describe('useReleaseNotes', () => {
       })
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.github.com/repos/janhq/jan/releases'
+        'https://updates.paia.example/releases/notes.json'
       )
       expect(result.current.loading).toBe(false)
       expect(result.current.error).toBe(null)
